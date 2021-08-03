@@ -5,13 +5,34 @@ import (
 	"github.com/streadway/amqp"
 )
 
-func GetConsumer(name string) (<-chan amqp.Delivery, *amqp.Connection, *amqp.Channel) {
+type Consumer struct {
+	Delivery <-chan amqp.Delivery
+	Conn     *amqp.Connection
+	Channel  *amqp.Channel
+	Name     string
+}
+
+//CloseAll cancel a delivery channel and close a connection to server
+func (c *Consumer) CloseAll() {
+
+	c.Channel.Close()
+	c.Conn.Close()
+}
+
+// GetConsumer return consumer for "name from args" queue . You should to close a amqp.Connection and amqp.Channel
+func GetConsumer(name string) (*Consumer, error) {
 	conn, err := amqp.Dial(shared.ConnPath)
-	failOnError(err, "Failed to connect to RabbitMQ")
+
+	if err != nil {
+		return nil, err
+	}
 
 	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
 
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
 	q, err := ch.QueueDeclare(
 		name,  // name
 		false, // durable
@@ -20,7 +41,13 @@ func GetConsumer(name string) (<-chan amqp.Delivery, *amqp.Connection, *amqp.Cha
 		false, // no-wait
 		nil,   // arguments
 	)
-	failOnError(err, "Failed to declare a queue")
+
+	if err != nil {
+		conn.Close()
+		ch.Close()
+		//ch.Cancel(name, false)
+		return nil, err
+	}
 
 	msgs, err := ch.Consume(
 		q.Name, // queue
@@ -31,7 +58,13 @@ func GetConsumer(name string) (<-chan amqp.Delivery, *amqp.Connection, *amqp.Cha
 		false,  // no-wait
 		nil,    // args
 	)
-	failOnError(err, "Failed to register a consumer")
 
-	return msgs, conn, ch
+	if err != nil {
+		conn.Close()
+		ch.Close()
+		// ch.Cancel(name, false)
+		return nil, err
+	}
+
+	return &Consumer{msgs, conn, ch, name}, nil
 }

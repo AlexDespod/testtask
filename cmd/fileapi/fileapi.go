@@ -1,8 +1,8 @@
+//fileproc is program that launch simple http server , which receive files and comunicate with RabbitMQ
 package main
 
 import (
 	"context"
-
 	"fmt"
 	"io"
 	"log"
@@ -15,18 +15,21 @@ import (
 
 func main() {
 
-	conn, publishChan, queue := pkg.GetPublisher()
-	defer conn.Close()
-	defer publishChan.Close()
+	publisher, err := pkg.GetPublisher(shared.QueueName)
 
-	publisher := shared.Publisher{Chan: publishChan, Queue: queue}
+	if err != nil {
+		panic(err)
+	}
+
+	defer publisher.CloseAll()
 
 	http.HandleFunc("/", injectConn(publisher, httphandl))
 
 	log.Fatal(http.ListenAndServe(":9090", nil))
 }
 
-func injectConn(publisher shared.Publisher, next http.HandlerFunc) http.HandlerFunc {
+//injectConn pull rabbitMQ connection to all requests
+func injectConn(publisher *pkg.Publisher, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		ctx := context.WithValue(r.Context(), "publisher", publisher)
@@ -35,6 +38,7 @@ func injectConn(publisher shared.Publisher, next http.HandlerFunc) http.HandlerF
 	}
 }
 
+//httphandl is function wich handle a requests
 func httphandl(res http.ResponseWriter, req *http.Request) {
 
 	defer req.Body.Close()
@@ -43,9 +47,11 @@ func httphandl(res http.ResponseWriter, req *http.Request) {
 
 	if err != nil {
 		fmt.Println(err)
-		res.WriteHeader(500)
+		res.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	defer uploadedFile.Close()
 
 	path := pkg.GetName(header.Filename)
 
@@ -61,7 +67,12 @@ func httphandl(res http.ResponseWriter, req *http.Request) {
 
 	io.Copy(file, uploadedFile)
 
-	pkg.SendMessToMQ(req.Context(), path)
+	err = pkg.SendMessToMQ(req.Context(), path)
+	if err != nil {
+		fmt.Println(err)
+		res.WriteHeader(500)
+		return
+	}
 
 	res.WriteHeader(200)
 }

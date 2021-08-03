@@ -2,41 +2,68 @@ package pkg
 
 import (
 	"context"
-	"log"
+	"fmt"
 
 	"github.com/AlexDespod/testtask/shared"
 	"github.com/streadway/amqp"
 )
 
-func GetPublisher() (*amqp.Connection, *amqp.Channel, *amqp.Queue) {
+//Publisher is a type for sender
+type Publisher struct {
+	Conn  *amqp.Connection
+	Chan  *amqp.Channel
+	Queue *amqp.Queue
+}
+
+//CloseAll cancel a delivery channel and close a connection to server
+func (c *Publisher) CloseAll() {
+	c.Chan.Close()
+	c.Conn.Close()
+}
+
+//GetPublisher return Publisher object wich contain connection , channel and queue
+func GetPublisher(name string) (*Publisher, error) {
 
 	conn, err := amqp.Dial(shared.ConnPath)
 
-	failOnError(err, "Failed to connect to RabbitMQ")
+	if err != nil {
+		return nil, fmt.Errorf("can't establish a connection . %v", err)
+	}
 
 	ch, err := conn.Channel()
 
-	failOnError(err, "Failed to open a channel")
+	if err != nil {
 
+		conn.Close()
+
+		return nil, fmt.Errorf("can't get a channel . %v", err)
+	}
 	q, err := ch.QueueDeclare(
-		"hello", // name
-		false,   // durable
-		false,   // delete when unused
-		false,   // exclusive
-		false,   // no-wait
-		nil,     // arguments
+		name,  // name
+		false, // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
+		nil,   // arguments
 	)
-	failOnError(err, "Failed to declare a queue")
+	if err != nil {
+		conn.Close()
+		ch.Close()
+		return nil, fmt.Errorf("can't declare queue . %v", err)
+	}
 
-	return conn, ch, &q
+	return &Publisher{Conn: conn, Chan: ch, Queue: &q}, nil
 }
 
-func SendMessToMQ(ctx context.Context, filePath string) {
+//SendMessToMQ take context with Publisher and write data (message) to message broker
+func SendMessToMQ(ctx context.Context, data string) error {
 
-	pb, ok := ctx.Value("publisher").(shared.Publisher)
+	pb, ok := ctx.Value("publisher").(*Publisher)
+
 	if !ok {
-		return
+		return fmt.Errorf("can't assert a type from context to Publisher")
 	}
+
 	err := pb.Chan.Publish(
 		"",            // exchange
 		pb.Queue.Name, // routing key
@@ -44,13 +71,12 @@ func SendMessToMQ(ctx context.Context, filePath string) {
 		false,         // immediate
 		amqp.Publishing{
 			ContentType: "text/plain",
-			Body:        []byte(filePath),
+			Body:        []byte(data),
 		})
-	failOnError(err, "cant send")
-}
 
-func failOnError(err error, msg string) {
 	if err != nil {
-		log.Fatalf("%s: %s", msg, err)
+		return fmt.Errorf("can't send message to broker . %v", err)
 	}
+
+	return nil
 }

@@ -1,36 +1,75 @@
 package pkg
 
 import (
+	"fmt"
 	"image/jpeg"
-	"log"
+	"image/png"
+	"path/filepath"
+
 	"os"
 
 	"github.com/nfnt/resize"
 )
 
-func Resize(path string) {
+//Resize can resize jpg or png formats
+func Resize(path string, width, height uint) error {
 
 	file, err := os.OpenFile(path, os.O_RDWR, 0666)
 
 	if err != nil {
-		log.Fatalf("%s", err)
+		fmt.Println(err)
+		return err
 	}
 
 	defer file.Close()
 
-	img, err := jpeg.Decode(file)
+	filetype := filepath.Ext(path)
 
-	if err != nil {
-		log.Fatalf("%s", err)
+	switch filetype {
+	case ".png":
+		err = resizePNG(file, width, height)
+	case ".jpg", ".jpeg":
+		err = resizeJPG(file, width, height)
 	}
 
-	m := resize.Resize(100, 0, img, resize.Lanczos3)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+
+	return nil
+}
+
+func resizeJPG(file *os.File, width, height uint) error {
+	img, err := jpeg.Decode(file)
+	if err != nil {
+		return err
+	}
+	m := resize.Resize(width, height, img, resize.Lanczos3)
 
 	file.Seek(0, 0)
 
 	err = jpeg.Encode(file, m, nil)
-	if err != nil {
-		log.Fatalf("%s", err)
-	}
 
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func resizePNG(file *os.File, width, height uint) error {
+	img, err := png.Decode(file)
+	if err != nil {
+		return err
+	}
+	m := resize.Resize(width, height, img, resize.Lanczos3)
+
+	file.Seek(0, 0)
+
+	err = png.Encode(file, m)
+
+	if err != nil {
+		return err
+	}
+	return nil
 }

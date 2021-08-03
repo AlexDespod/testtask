@@ -2,22 +2,21 @@ package pkg
 
 import (
 	"math/rand"
-	"os"
+	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/AlexDespod/testtask/shared"
 )
 
+// GetName generate random name for file . Return a path to this file
 func GetName(filename string) string {
-	filetype := (strings.Split(filename, "."))[1]
 
+	filetype := filepath.Ext(filename)
 	rand.Seed(time.Now().UnixNano())
+	num := rand.Int()
 
-	name := strconv.Itoa(rand.Int())
-
-	dir, _ := os.Getwd()
-
-	path := dir + "\\photos\\" + name + "." + filetype
+	path := shared.PhotosDir + "\\" + strconv.Itoa(num) + filetype
 
 	return path
 }
